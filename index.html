@@ -1,129 +1,827 @@
 <!doctype html>
 <meta charset="utf-8">
-<div>
-  <div>
-    <label>振幅 <input id="amp" type="range" min="0.1" max="1.5" step="0.1" value="1"> <span id="ampValue"></span> m</label>
-  </div>
-  <div>
-    <label>波長 <input id="lambda" type="range" min="0.5" max="4" step="0.1" value="2"> <span id="lambdaValue"></span> m</label>
-  </div>
-  <div>
-    <label>周期 <input id="period" type="range" min="0.5" max="4" step="0.1" value="2"> <span id="periodValue"></span> 秒</label>
-  </div>
-  <div>速さ <span id="speedValue"></span> m/s</div>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>波の伝播</title>
+<style>
+  :root {
+    --text: #222;
+    --muted: #555;
+    --border: #c8ccd2;
+    --panel: #f6f7f9;
+    --accent: #2f6fb3;
+  }
+  body {
+    margin: 16px auto; padding: 0 16px; max-width: 1340px;
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+    color: var(--text); background: #fff; line-height: 1.5;
+  }
+  h1 { font-size: 1.6em; margin: 0 0 10px; }
+
+  /* タブ */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #888; margin: 0 0 10px; }
+  .tabs button {
+    padding: 6px 16px; font: inherit; cursor: pointer; color: var(--text);
+    border: 1px solid #888; border-bottom: none; border-radius: 6px 6px 0 0; background: #eee;
+  }
+  .tabs button:hover { background: #e2e6eb; }
+  .tabs button[aria-selected="true"] {
+    background: #fff; font-weight: bold; margin-bottom: -2px; border-bottom: 2px solid #fff;
+  }
+
+  /* 操作パネル（各タブ共通） */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 14px; margin: 0 0 10px;
+  }
+  .panel[hidden] { display: none; }
+  .ctrl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; margin: 4px 0; }
+  .ctrl label { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .ctrl input[type="range"] { width: 140px; }
+  .group { font-weight: bold; min-width: 7.5em; }
+  .val { display: inline-block; min-width: 2.1em; font-variant-numeric: tabular-nums; }
+  span > .val { min-width: 0; }
+  .note { color: var(--muted); font-size: 0.92em; }
+  .sep { width: 1px; align-self: stretch; background: var(--border); }
+  #selXNum { width: 4.5em; }
+
+  /* 凡例の線見本（--c に色、.dash で破線） */
+  .key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .key::before {
+    content: ""; width: 24px; border-top: 4px solid var(--c);
+  }
+  .key.dash::before { border-top: 3px dashed var(--c); }
+  .key.dot::before { width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--c); }
+  .key[hidden] { display: none; }
+
+  /* 図 */
+  svg { display: block; max-width: 100%; height: auto; margin: 0 0 6px; }
+  svg text { font-family: "Times New Roman", Times, "Hiragino Mincho ProN", serif; }
+  /* 目盛り層（グラフの最前面）。文字の周りを白く塗って、線や点の上でも読めるようにする */
+  .ticks text { paint-order: stroke fill; stroke: #fff; stroke-width: 7px; stroke-linejoin: round; }
+  #yxHit, #selDot { cursor: pointer; touch-action: none; }
+
+  /* 再生ボタン */
+  #controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 16px; }
+  #controls[hidden] { display: none; }
+  #controls button {
+    padding: 6px 14px; font: inherit; cursor: pointer; color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; background: #fff;
+  }
+  #controls button:hover { background: #eef2f7; }
+  #controls #startstop { min-width: 6.5em; color: #fff; background: var(--accent); border-color: var(--accent); }
+  #controls #startstop:hover { filter: brightness(1.1); }
+  .time { margin-left: 10px; font-variant-numeric: tabular-nums; }
+</style>
+
+<h1 id="pageTitle">波の伝播</h1>
+
+<div class="tabs" role="tablist">
+  <button role="tab" data-tab="tab-yx" data-clock="wave" data-title="波の伝播" aria-selected="true">y-x グラフ</button>
+  <button role="tab" data-tab="tab-yt" data-clock="wave" data-title="媒質の振動" aria-selected="false">y-t グラフ</button>
+  <button role="tab" data-tab="tab-params" data-title="波のパラメータ" aria-selected="false">波のパラメータ</button>
+  <button role="tab" data-tab="tab-long" data-title="縦波" aria-selected="false">縦波</button>
+  <button role="tab" data-tab="tab-standing" data-title="進行波と定在波" aria-selected="false">進行波と定在波</button>
+  <button role="tab" data-tab="tab-reflect" data-title="パルス波の反射" aria-selected="false">反射</button>
 </div>
-<svg width="800" height="370" font-size="22pt">
-  <g id="grid"></g>
-  <line x1="90" y1="190" x2="710" y2="190" stroke="black" stroke-width = "2"/>
-  <line x1="90" y1="30" x2="90" y2="350" stroke="black" stroke-width = "2"/>
-  <g id="yTicks"></g>
-  <g id="hTicks"></g>
-  <text x="100" y="28">y [m]</text>
-  <text x="716" y="200">x [m]</text>
-  <polyline id="moving1" fill="none" stroke="lightgreen" stroke-width="10"/>
-  <g id="dots"></g>
-</svg>
-<div>
-  <button id = back>back</button>
-  <button id = startstop>start/stop</button>
-  <button id = next>next</button>
-  <button id = reset>reset</button>
+
+<!-- 「y-x グラフ」「y-t グラフ」共通のパラメータ -->
+<div id="mainParams" class="panel">
+  <div class="ctrl">
+    <label>振幅 <input id="amp" type="range" min="0.1" max="1.5" step="0.1" value="1"> <span id="ampValue" class="val"></span> m</label>
+    <label>波長 <input id="lambda" type="range" min="0.5" max="4" step="0.1" value="2"> <span id="lambdaValue" class="val"></span> m</label>
+    <label>周期 <input id="period" type="range" min="0.5" max="4" step="0.1" value="2"> <span id="periodValue" class="val"></span> s</label>
+    <span>速さ <span id="speedValue" class="val"></span> m/s</span>
+  </div>
+  <div class="ctrl">
+    <label><input type="radio" name="waveType" value="cont" checked> 連続波</label>
+    <label><input type="radio" name="waveType" value="pulse"> パルス波</label>
+  </div>
 </div>
+
+<!-- タブ1: y-x グラフ（波形） -->
+<section id="tab-yx" role="tabpanel">
+  <svg viewBox="0 0 800 390" width="800" height="390" font-size="22pt">
+    <g id="grid"></g>
+    <line x1="90" y1="190" x2="710" y2="190" stroke="black" stroke-width="2"/>
+    <line x1="90" y1="40" x2="90" y2="340" stroke="black" stroke-width="2"/>
+    <polyline id="moving1" fill="none" stroke="lightgreen" stroke-width="10"/>
+    <g id="dots"></g>
+    <!-- 目盛り（最前面） -->
+    <g class="ticks">
+      <g id="yTicks"></g>
+      <g id="hTicks"></g>
+      <text x="100" y="28">y [m]</text>
+      <text x="716" y="200">x [m]</text>
+    </g>
+  </svg>
+</section>
+
+<!-- タブ2: yーtグラフ -->
+<section id="tab-yt" role="tabpanel" hidden>
+  <!-- <div class="panel"> -->
+    <div class="ctrl">
+      <label>y-t グラフを描く点 x = <input id="selX" type="range" autocomplete="off" min="0" max="4.5" step="0.1" value="0"></label>
+      <label><input id="selXNum" type="number" autocomplete="off" min="0" max="4.5" step="0.1" value="0" aria-label="点の位置 x [m]"> m</label>
+      <!-- <span class="note">グラフ上のクリック・ドラッグでも選べます</span> -->
+    </div>
+    <div class="ctrl">
+      <label><input id="showArrows" type="checkbox"> 媒質の速度の向きを表示</label>
+    </div>
+  <!-- </div> -->
+  <svg id="svgYT" viewBox="0 0 1310 390" width="1310" height="390" font-size="22pt">
+    <defs>
+      <marker id="arrowHead" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="royalblue"/>
+      </marker>
+    </defs>
+    <!-- 左: y-x -->
+    <g id="grid2"></g>
+    <rect id="yxHit" x="80" y="30" width="480" height="320" fill="transparent"/>
+    <line x1="90" y1="190" x2="560" y2="190" stroke="black" stroke-width="2"/>
+    <line x1="90" y1="40" x2="90" y2="340" stroke="black" stroke-width="2"/>
+    <line id="selMarker" y1="40" y2="340" stroke="#d33" stroke-dasharray="6 6" stroke-width="1.5"/>
+    <polyline id="moving2" fill="none" stroke="lightgreen" stroke-width="10"/>
+    <!-- 右: y-t -->
+    <g id="ytGridH"></g>
+    <g id="ytGridV"></g>
+    <line x1="740" y1="190" x2="1240" y2="190" stroke="black" stroke-width="2"/>
+    <line x1="740" y1="40" x2="740" y2="340" stroke="black" stroke-width="2"/>
+    <!-- 横の対応線・軌跡・点 -->
+    <line id="connector" stroke="gray" stroke-dasharray="8 6" stroke-width="2"/>
+    <polyline id="ytTrace" fill="none" stroke="#d33" stroke-width="4"/>
+    <circle id="ytNow" r="8" fill="#d33"/>
+    <line id="selArrow" stroke="royalblue" stroke-width="4" marker-end="url(#arrowHead)" visibility="hidden"/>
+    <circle id="selDot" r="9" fill="#d33"/>
+    <!-- 目盛り（最前面） -->
+    <g class="ticks">
+      <g id="yTicks2"></g>
+      <g id="hTicks2"></g>
+      <text x="100" y="28">y [m]</text>
+      <text x="566" y="200">x [m]</text>
+      <g id="ytYTicks"></g>
+      <g id="ytTTicks"></g>
+      <text x="750" y="28">y [m]</text>
+      <text x="1246" y="200">t [s]</text>
+      <text id="ytTitle" x="1240" y="28" text-anchor="end" font-size="16pt" fill="#d33"></text>
+    </g>
+  </svg>
+</section>
+
+<!-- タブ3: 波のパラメータ（静止画） -->
+<section id="tab-params" role="tabpanel" hidden>
+  <div class="panel">
+    <div class="ctrl">
+      <label><input type="radio" name="pType" value="yx" checked> y-x グラフ</label>
+      <label><input type="radio" name="pType" value="yt"> y-t グラフ</label>
+    </div>
+    <div class="ctrl">
+      <label>振幅 <input id="pAmp" type="range" min="-2" max="2" step="0.1" value="1"> <span id="pAmpV" class="val"></span> m</label>
+      <label>波長 <input id="pLambda" type="range" min="2" max="8" step="1" value="4"> <span id="pLambdaV" class="val"></span> m</label>
+      <label>振動数 <input id="pFreq" type="range" min="0.25" max="4" step="0.05" value="1"> <span id="pFreqV" class="val"></span> Hz</label>
+      <label>初期位相 <input id="pPhase" type="range" min="0" max="1" step="0.0625" value="0"> <span id="pPhaseV" class="val"></span> rad</label>
+    </div>
+    <div class="ctrl">
+      <span>周期 T = <span id="pT" class="val"></span> s</span>
+      <span>速さ v = <span id="pV" class="val"></span> m/s</span>
+      <!-- <span class="note">y = A sin(2π(x/λ − t/T) + φ)</span> -->
+    </div>
+  </div>
+  <svg id="svgParams"></svg>
+</section>
+
+<!-- タブ4: 縦波 -->
+<section id="tab-long" role="tabpanel" hidden>
+  <div class="panel">
+    <div class="ctrl">
+      <label>振幅 <input id="lAmp" type="range" min="-1" max="1" step="0.1" value="-0.5"> <span id="lAmpV" class="val"></span></label>
+      <label><input id="lArrows" type="checkbox"> <span class="key" style="--c:royalblue">変位を矢印で表示</span></label>
+    </div>
+  </div>
+  <svg id="svgLong"></svg>
+</section>
+
+<!-- タブ5: 進行波と定在波 -->
+<section id="tab-standing" role="tabpanel" hidden>
+  <div class="panel">
+    <div class="ctrl">
+      <span class="group key" style="--c:deepskyblue">進行波A（→）</span>
+      <label>振幅 <input id="sA1" type="range" min="0.5" max="1" step="0.1" value="1"> <span id="sA1V" class="val"></span></label>
+      <label>波長 <input id="sL1" type="range" min="0.5" max="2.5" step="0.1" value="1"> <span id="sL1V" class="val"></span></label>
+      <label>速さ <input id="sV1" type="range" min="0.125" max="0.5" step="0.125" value="0.125"> <span id="sV1V" class="val"></span></label>
+    </div>
+    <div class="ctrl">
+      <span class="group key" style="--c:hotpink">進行波B（←）</span>
+      <label>振幅 <input id="sA2" type="range" min="0.5" max="1" step="0.1" value="1"> <span id="sA2V" class="val"></span></label>
+      <label>波長 <input id="sL2" type="range" min="0.5" max="2.5" step="0.1" value="1"> <span id="sL2V" class="val"></span></label>
+      <label>速さ <input id="sV2" type="range" min="0.125" max="0.5" step="0.125" value="0.125"> <span id="sV2V" class="val"></span></label>
+    </div>
+    <div class="ctrl">
+      <label><input id="chkA" type="checkbox" checked> <span class="key" style="--c:deepskyblue">進行波A</span></label>
+      <label><input id="chkB" type="checkbox"> <span class="key" style="--c:hotpink">進行波B</span></label>
+      <label><input id="chkS" type="checkbox"> <span class="key" style="--c:green">定在波（合成波）</span></label>
+      <label><input id="chkN" type="checkbox"> <span class="key dot" style="--c:red">腹</span> <span class="key dot" style="--c:blue">節</span></label>
+    </div>
+  </div>
+  <svg id="svgStanding"></svg>
+</section>
+
+<!-- タブ6: パルス波の反射 -->
+<section id="tab-reflect" role="tabpanel" hidden>
+  <div class="panel">
+    <div class="ctrl">
+      <label><input type="radio" name="rShape" value="square" checked> 矩形波</label>
+      <label><input type="radio" name="rShape" value="triangle"> 三角波</label>
+      <label><input type="radio" name="rShape" value="sine"> 正弦波</label>
+      <span class="sep"></span>
+      <label><input type="radio" name="rEdge" value="free" checked> 自由端</label>
+      <label><input type="radio" name="rEdge" value="fixed"> 固定端</label>
+      <span class="sep"></span>
+      <label><input type="radio" name="rAux" value="off" checked> 補助線なし</label>
+      <label><input type="radio" name="rAux" value="on"> 補助線あり</label>
+    </div>
+    <div class="ctrl">
+      <span class="key" style="--c:green">実際に見える波</span>
+      <span id="rLegendInc" class="key dash" style="--c:red" hidden>入射波</span>
+      <span id="rLegendInv" class="key dash" style="--c:#f39" hidden>上下反転した入射波</span>
+      <span id="rLegendRef" class="key dash" style="--c:blue" hidden>反射波</span>
+    </div>
+  </div>
+  <svg id="svgReflect"></svg>
+</section>
+
+<!-- 再生ボタン（静止画のタブでは隠す） -->
+<div id="controls">
+  <button id="back" title="T/8 戻る">◀ 戻る</button>
+  <button id="startstop">▶ 再生</button>
+  <button id="next" title="T/8 進む">進む ▶</button>
+  <button id="reset">リセット</button>
+  <span class="time">時刻 t = <span id="timeValue"></span> s</span>
+</div>
+
 <script>
-  const moving1 = document.getElementById('moving1');
-  const ampInput = document.getElementById('amp');
-  const lambdaInput = document.getElementById('lambda');
-  const periodInput = document.getElementById('period');
-  const ampValue = document.getElementById('ampValue');
-  const lambdaValue = document.getElementById('lambdaValue');
-  const periodValue = document.getElementById('periodValue');
-  const speedValue = document.getElementById('speedValue');
-  const pxPerM = 100;
-  const originX = 90;
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const $ = id => document.getElementById(id);
+  const ampInput = $('amp');
+  const lambdaInput = $('lambda');
+  const periodInput = $('period');
+  const pxPerM = 100;          // y 方向・x 方向とも 1 m = 100 px
+  const originX = 90;          // y-x グラフの原点
   const originY = 190;
-  let isRunning = false;
-  let phase = 0;
-  let prevMs = 0;
+  const ytOriginX = 740;       // y-t グラフの原点
+  const pxPerS = 60;           // y-t グラフの横軸 1 s = 60 px
+  const tWindow = 8;           // y-t グラフに表示する時間幅 [s]
+  const xMax2 = 4.5;           // タブ2の y-x グラフの x の範囲 [m]
   const step = 1 / 8;
   const formatSig = v => (v === 0 || Math.abs(v) >= 100) ? String(v) : v.toPrecision(2);
 
-  let gridSvg = '';
-  for (let x = 0; x <= 6; x += 0.5) {
-    const px = originX + x * pxPerM;
-    gridSvg += `<line x1="${px}" y1="${originY - 1.5 * pxPerM}" x2="${px}" y2="${originY + 1.5 * pxPerM}" stroke="lightgray"/>`;
-  }
-  for (let y = -1.5; y <= 1.5; y += 0.5) {
-    const py = originY - y * pxPerM;
-    gridSvg += `<line x1="${originX}" y1="${py}" x2="${originX + 6 * pxPerM}" y2="${py}" stroke="lightgray"/>`;
-  }
-  document.getElementById('grid').innerHTML = gridSvg;
+  let isRunning = false;
+  let phase = 0;               // t / T
+  let prevMs = 0;
+  let activeTab = document.querySelector('[role="tab"]').dataset.tab;   // 起動時はタブバーの先頭
+  let selectedX = 0;           // y-t グラフを描く点の位置 [m]（起動時にスライダーの値で初期化）
 
-  let yTickSvg = '';
-  for (const v of [-1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5]) {
-    const py = originY - v * pxPerM;
-    yTickSvg += `<line x1="${originX - 5}" y1="${py}" x2="${originX + 5}" y2="${py}" stroke="black"/>`;
-    yTickSvg += `<text x="${originX - 8}" y="${py + 10}" text-anchor="end">${formatSig(v)}</text>`;
+  // ---------- タブ切り替え ----------
+  const tabButtons = document.querySelectorAll('[role="tab"]');
+  const tabPanels = document.querySelectorAll('[role="tabpanel"]');
+  // タブごとに時刻（phase）と再生状態を保存する。data-clock が同じタブは時刻を共有する
+  const clocks = {};
+  const clockOf = tabId => document.querySelector(`[data-tab="${tabId}"]`).dataset.clock || tabId;
+  function selectTab(btn) {
+    clocks[clockOf(activeTab)] = { phase, isRunning };
+    activeTab = btn.dataset.tab;
+    const c = clocks[clockOf(activeTab)] || { phase: 0, isRunning: false };
+    phase = c.phase;
+    isRunning = c.isRunning;
+    for (const b of tabButtons) b.setAttribute('aria-selected', String(b === btn));
+    for (const p of tabPanels) p.hidden = p.id !== activeTab;
+    $('mainParams').hidden = !!extraTabs[activeTab];
+    $('controls').hidden = !!extraTabs[activeTab]?.isStatic;
+    $('pageTitle').textContent = btn.dataset.title;
+    document.title = btn.dataset.title;
   }
-  document.getElementById('yTicks').innerHTML = yTickSvg;
+  for (const btn of tabButtons) btn.addEventListener('click', () => selectTab(btn));
 
-  let hTickSvg = '';
-  for (let n = 0; n <= 6; n++) {
-    const px = originX + n * pxPerM;
-    hTickSvg += `<line x1="${px}" y1="${originY - 5}" x2="${px}" y2="${originY + 5}" stroke="black"/>`;
-    if (n !== 0) hTickSvg += `<text x="${px}" y="${originY + 38}" text-anchor="middle">${formatSig(n)}</text>`;
+  // ---------- 目盛り・グリッド ----------
+  function gridSvg(x0px, widthM) {
+    let s = '';
+    for (let x = 0; x <= widthM + 1e-9; x += 0.5) {
+      const px = x0px + x * pxPerM;
+      s += `<line x1="${px}" y1="${originY - 1.5 * pxPerM}" x2="${px}" y2="${originY + 1.5 * pxPerM}" stroke="lightgray"/>`;
+    }
+    s += hGridSvg(x0px, x0px + widthM * pxPerM);
+    return s;
   }
-  document.getElementById('hTicks').innerHTML = hTickSvg;
-
-  const dots = [];
-  for (let x = 0; x <= 600; x += 0.5 * pxPerM) {
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', originX + x);
-    circle.setAttribute('r', 5);
-    circle.setAttribute('fill', 'green');
-    document.getElementById('dots').appendChild(circle);
-    dots.push({ x, circle });
+  function hGridSvg(x1, x2) {
+    let s = '';
+    for (let y = -1.5; y <= 1.5; y += 0.5) {
+      const py = originY - y * pxPerM;
+      s += `<line x1="${x1}" y1="${py}" x2="${x2}" y2="${py}" stroke="lightgray"/>`;
+    }
+    return s;
+  }
+  function yTickSvg(axisX, withLabel) {
+    let s = '';
+    for (const v of [-1.5, -1.0, -0.5, 0, 0.5, 1.0, 1.5]) {
+      const py = originY - v * pxPerM;
+      s += `<line x1="${axisX - 5}" y1="${py}" x2="${axisX + 5}" y2="${py}" stroke="black"/>`;
+      if (withLabel) s += `<text x="${axisX - 8}" y="${py + 10}" text-anchor="end">${formatSig(v)}</text>`;
+    }
+    return s;
+  }
+  function xTickSvg(maxM) {
+    let s = '';
+    for (let n = 0; n <= maxM; n++) {
+      const px = originX + n * pxPerM;
+      s += `<line x1="${px}" y1="${originY - 5}" x2="${px}" y2="${originY + 5}" stroke="black"/>`;
+      if (n !== 0) s += `<text x="${px}" y="${originY + 38}" text-anchor="middle">${formatSig(n)}</text>`;
+    }
+    return s;
   }
 
-  document.getElementById('startstop').addEventListener('click', () => {
+  $('grid').innerHTML = gridSvg(originX, 6);
+  $('yTicks').innerHTML = yTickSvg(originX, true);
+  $('hTicks').innerHTML = xTickSvg(6);
+
+  $('grid2').innerHTML = gridSvg(originX, xMax2);
+  $('yTicks2').innerHTML = yTickSvg(originX, true);
+  $('hTicks2').innerHTML = xTickSvg(4);
+  $('ytGridH').innerHTML = hGridSvg(ytOriginX, ytOriginX + tWindow * pxPerS);
+  $('ytYTicks').innerHTML = yTickSvg(ytOriginX, true);
+
+  // ---------- 媒質の点 ----------
+  function makeDots(parentId, maxM, cls) {
+    const list = [];
+    for (let i = 0; i <= Math.round(maxM / 0.5); i++) {
+      const x = i * 0.5;
+      const c = document.createElementNS(SVGNS, 'circle');
+      c.setAttribute('cx', originX + x * pxPerM);
+      c.setAttribute('r', 5);
+      c.setAttribute('fill', 'green');
+      if (cls) c.setAttribute('class', cls);
+      $(parentId).appendChild(c);
+      list.push({ x, circle: c });
+    }
+    return list;
+  }
+  const dots = makeDots('dots', 6);
+
+  // ---------- y-t グラフを描く点の選択（スライダー・数値入力・クリック／ドラッグ） ----------
+  const selXInput = $('selX');
+  const selXNum = $('selXNum');
+  function setSelectedX(v) {
+    if (!Number.isFinite(v)) return;
+    v = Math.min(xMax2, Math.max(0, Math.round(v * 10) / 10));   // 0.1 m 刻み
+    selectedX = v;
+    selXInput.value = v;
+    if (document.activeElement !== selXNum) selXNum.value = v.toFixed(1);
+  }
+  selXInput.addEventListener('input', () => setSelectedX(Number(selXInput.value)));
+  selXNum.addEventListener('input', () => setSelectedX(Number(selXNum.value)));
+  selXNum.addEventListener('change', () => { selXNum.value = selectedX.toFixed(1); });
+  setSelectedX(Number(selXInput.value));   // スライダー・数値欄・赤点を同じ値にそろえる
+
+  const svgYT = $('svgYT');
+  let dragging = false;
+  function pointerToX(e) {
+    const p = svgYT.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    const sp = p.matrixTransform(svgYT.getScreenCTM().inverse());
+    return (sp.x - originX) / pxPerM;
+  }
+  svgYT.addEventListener('pointerdown', e => {
+    const x = pointerToX(e);
+    if (x < -0.1 || x > xMax2 + 0.2) return;   // y-x グラフの範囲外は無視
+    dragging = true;
+    svgYT.setPointerCapture(e.pointerId);
+    setSelectedX(x);
+  });
+  svgYT.addEventListener('pointermove', e => { if (dragging) setSelectedX(pointerToX(e)); });
+  svgYT.addEventListener('pointerup', () => { dragging = false; });
+  svgYT.addEventListener('pointercancel', () => { dragging = false; });
+
+  // ---------- ボタン ----------
+  $('startstop').addEventListener('click', () => {
+    // 終わりまで進んだアニメーションは、start で最初から再生し直す
+    const ex = extraTabs[activeTab];
+    if (!isRunning && ex?.maxPhase && phase >= ex.maxPhase() - 1e-9) phase = 0;
     isRunning = !isRunning;
   });
-  document.getElementById('next').addEventListener('click', () => {
+  $('next').addEventListener('click', () => {
     isRunning = false;
     phase = (Math.floor(phase / step + 1e-9) + 1) * step;
   });
-  document.getElementById('back').addEventListener('click', () => {
+  $('back').addEventListener('click', () => {
     isRunning = false;
     phase = Math.max(0, (Math.ceil(phase / step - 1e-9) - 1) * step);
   });
-  document.getElementById('reset').addEventListener('click', () => {
+  $('reset').addEventListener('click', () => {
     isRunning = false;
     phase = 0;
   });
 
+  const TAU = 2 * Math.PI;
+  const num = id => Number($(id).value);
+  const radioVal = name => document.querySelector(`input[name="${name}"]:checked`).value;
+  const range = (a, b, d) => {
+    const r = [];
+    const n = Math.round((b - a) / d);
+    for (let i = 0; i <= n; i++) r.push(a + i * d);
+    return r;
+  };
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+
+  const plots = [];   // createPlot で作ったグラフ（起動時に目盛り層を最前面へ移す）
+
+  // データ座標 → SVG 座標の変換と、描画用の部品をまとめたもの
+  function createPlot(svgId, o) {
+    const H = o.height ?? 390;
+    const left = o.left ?? 90, rightPad = o.rightPad ?? 90;
+    // equalAspect: x と y の 1 目盛りの長さを同じにする（高さはそのまま、横幅を合わせる）
+    const W = o.equalAspect
+      ? Math.round(left + (o.xmax - o.xmin) * (H - 90) / (o.ymax - o.ymin) + rightPad)
+      : (o.width ?? 800);
+    const svg = $(svgId);
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('width', W);
+    svg.setAttribute('height', H);
+    svg.setAttribute('font-size', '22pt');
+    const p = {
+      svg, xmin: o.xmin, xmax: o.xmax, ymin: o.ymin, ymax: o.ymax,
+      L: left, R: W - rightPad, T: 40, B: H - 50,
+    };
+    p.X = x => p.L + (x - p.xmin) / (p.xmax - p.xmin) * (p.R - p.L);
+    p.Y = y => p.B - (y - p.ymin) / (p.ymax - p.ymin) * (p.B - p.T);
+    p.add = (tag, attrs = {}, parent = svg) => {
+      const e = document.createElementNS(SVGNS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      parent.appendChild(e);
+      return e;
+    };
+    p.bg = p.add('g');                                  // グリッド・軸線（最背面）
+    p.fg = document.createElementNS(SVGNS, 'g');        // 目盛り・軸名・注記（最前面）
+    p.fg.setAttribute('class', 'ticks');
+    p.raise = () => svg.appendChild(p.fg);              // 目盛り層を最後に移して最前面にする
+    plots.push(p);
+    p.path = attrs => p.add('path', { fill: 'none', ...attrs });
+    // xs の各点で f(x) を計算して path の d 属性を作る
+    p.d = (xs, f) => xs.map((x, i) => `${i ? 'L' : 'M'}${p.X(x).toFixed(1)},${p.Y(f(x)).toFixed(1)}`).join('');
+    return p;
+  }
+
+  // グリッド・軸線を p.bg に、目盛り・軸名を p.fg（最前面）に描く
+  function drawAxes(p, c) {
+    const line = (x1, y1, x2, y2, extra = 'stroke="lightgray"') =>
+      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${extra}/>`;
+    let s = c.under || '';
+    const gx0 = c.gridXmin ?? Math.max(p.xmin, 0);   // x < 0 にはグリッドを描かない
+    for (let k = Math.ceil(gx0 / c.xGrid - 1e-9); k * c.xGrid <= p.xmax + 1e-9; k++) {
+      const px = p.X(k * c.xGrid);
+      s += line(px, p.Y(p.ymin), px, p.Y(p.ymax));
+    }
+    for (let k = Math.ceil(p.ymin / c.yGrid - 1e-9); k * c.yGrid <= p.ymax + 1e-9; k++) {
+      const py = p.Y(k * c.yGrid);
+      s += line(p.X(gx0), py, p.X(p.xmax), py);
+    }
+    const ax = 'stroke="black" stroke-width="2"';
+    s += line(p.X(gx0), p.Y(0), p.X(p.xmax), p.Y(0), ax);
+    if (c.yAxisAt !== undefined) s += line(p.X(c.yAxisAt), p.Y(p.ymin), p.X(c.yAxisAt), p.Y(p.ymax), ax);
+    p.bg.innerHTML = s;
+    s = '';
+    const tickX0 = p.X(c.yAxisAt ?? p.xmin);
+    for (const t of c.xTicks || []) {
+      s += line(p.X(t), p.Y(0) - 5, p.X(t), p.Y(0) + 5, 'stroke="black"');
+      if (c.xLabel) s += `<text x="${p.X(t)}" y="${p.Y(0) + 38}" text-anchor="middle">${c.xLabel(t)}</text>`;
+    }
+    for (const t of c.yTicks || []) {
+      s += line(tickX0 - 5, p.Y(t), tickX0 + 5, p.Y(t), 'stroke="black"');
+      if (c.yLabel) s += `<text x="${tickX0 - 8}" y="${p.Y(t) + 10}" text-anchor="end">${c.yLabel(t)}</text>`;
+    }
+    if (c.xName) s += `<text x="${p.X(p.xmax) + 6}" y="${p.Y(0) + 10}">${c.xName}</text>`;
+    if (c.yName) s += `<text x="${tickX0 + 10}" y="${p.T - 12}">${c.yName}</text>`;
+    p.fg.innerHTML = s;
+    p.raise();
+  }
+
+  // ---------- 波のパラメータ（静止画: y-x / y-t を切り替え） ----------
+  const paramsTab = (() => {
+    const p = createPlot('svgParams', { xmin: -0.25, xmax: 8.5, ymin: -2.5, ymax: 2.5 });
+    const curve = p.path({ stroke: 'green', 'stroke-width': 4 });
+    let lastType = null;
+    const piText = k => {            // k/16 周期 = kπ/8 rad を約分して表示
+      if (k === 0) return '0';
+      const g = gcd(k, 8), n = k / g, d = 8 / g;
+      return `${n === 1 ? '' : n}π${d === 1 ? '' : '/' + d}`;
+    };
+    const common = { yGrid: 0.5, yAxisAt: 0, yTicks: range(-2, 2, 1), yLabel: formatSig, yName: 'y [m]' };
+    return {
+      isStatic: true,
+      period: () => 1,
+      draw() {
+        const A = num('pAmp'), lambda = num('pLambda'), f = num('pFreq');
+        const k = Math.round(num('pPhase') * 16);
+        const phi = TAU * k / 16;
+        $('pAmpV').textContent = formatSig(A);
+        $('pLambdaV').textContent = formatSig(lambda);
+        $('pFreqV').textContent = f.toFixed(2);
+        $('pPhaseV').textContent = piText(k);
+        $('pT').textContent = formatSig(1 / f);
+        $('pV').textContent = formatSig(f * lambda);
+
+        const type = radioVal('pType');
+        if (type !== lastType) {
+          lastType = type;
+          if (type === 'yx') {
+            p.xmin = -0.25; p.xmax = 8.5;
+            drawAxes(p, { ...common, xGrid: 0.5, xTicks: range(1, 8, 1), xLabel: formatSig, xName: 'x [m]' });
+          } else {
+            p.xmin = -0.125; p.xmax = 4.25;
+            drawAxes(p, { ...common, xGrid: 0.25, xTicks: range(0.5, 4, 0.5), xLabel: formatSig, xName: 't [s]' });
+          }
+        }
+        curve.setAttribute('d', type === 'yx'
+          ? p.d(range(0, 8, 0.01), x => A * Math.sin(TAU * x / lambda + phi))
+          : p.d(range(0, 4, 0.005), t => A * Math.sin(-TAU * f * t + phi)));
+      },
+    };
+  })();
+
+  // ---------- 縦波（横波表示と縦波を上下に並べる） ----------
+  const longTab = (() => {
+    const p = createPlot('svgLong', { xmin: -0.5, xmax: 16.5, ymin: -2, ymax: 3, left: 50, rightPad: 40, equalAspect: true });
+    drawAxes(p, { xGrid: 1, yGrid: 1, xTicks: range(0, 16, 1) });   // 1 マス = 1 × 1 の正方形
+    const label = (y, t) => { p.add('text', { x: p.X(0.2), y: p.Y(y), 'font-size': '16pt', fill: '#555' }, p.fg).textContent = t; };
+    label(2.7, '縦波（媒質の実際の位置）');
+    label(-1.75, '横波表示（x 方向の変位を y 方向に表したもの）');
+    const xsLine = range(0, 16, 0.05), xsPt = range(0, 16, 0.5);
+    const markX = 8;                               // 赤で示す媒質の点
+    const curve = p.path({ stroke: 'orange', 'stroke-width': 3 });
+    const bars = p.path({ stroke: 'black', 'stroke-width': 3 });
+    const redBar = p.add('line', { stroke: '#d33', 'stroke-width': 5, y1: p.Y(1.5), y2: p.Y(2.5) });
+    const pts = xsPt.map(x => p.add('circle', {
+      cx: p.X(x), r: x === markX ? 8 : 5, fill: x === markX ? '#d33' : 'orange',
+    }));
+
+    // 変位の矢印（2 マスごと）。縦波は x 方向、横波表示は同じ変位を y 方向に描く
+    const defs = p.add('defs');
+    const mk = p.add('marker', { id: 'longArrowHead', viewBox: '0 0 10 10', refX: 10, refY: 5,
+      markerUnits: 'userSpaceOnUse', markerWidth: 11, markerHeight: 11, orient: 'auto' }, defs);
+    p.add('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'royalblue' }, mk);
+    const xsArrow = range(0, 16, 2);
+    const arrowAttrs = { stroke: 'royalblue', 'stroke-width': 3, 'marker-end': 'url(#longArrowHead)' };
+    const yLongArrow = 1.3;                        // 縦波の矢印を描く高さ（縦線のすぐ下）
+    const restMarks = p.add('g');                  // 縦波のつり合いの位置（矢印の根元）
+    for (const x of xsArrow) {
+      p.add('line', { x1: p.X(x), x2: p.X(x), y1: p.Y(yLongArrow) - 7, y2: p.Y(yLongArrow) + 7,
+        stroke: 'royalblue', 'stroke-width': 2 }, restMarks);
+    }
+    const longArrows = xsArrow.map(() => p.add('line', arrowAttrs));
+    const transArrows = xsArrow.map(() => p.add('line', arrowAttrs));
+
+    const lambda = 8, T = 2;                       // 波長 8、周期 2 s（速さ 4）
+    return {
+      period: () => T,
+      draw(ph) {
+        const A = num('lAmp');
+        $('lAmpV').textContent = formatSig(A);
+        const s = lambda * ph;
+        const y = x => x <= s ? A * Math.sin(TAU * (x - s) / lambda) : 0;
+        curve.setAttribute('d', p.d(xsLine, y));
+        let d = '';
+        for (const x of xsPt) {
+          const xl = x + y(x);                     // 縦波での実際の位置
+          if (x === markX || xl < p.xmin || xl > p.xmax) continue;
+          d += `M${p.X(xl).toFixed(1)},${p.Y(1.6)}V${p.Y(2.4)}`;
+        }
+        bars.setAttribute('d', d);
+        const xm = p.X(markX + y(markX));
+        redBar.setAttribute('x1', xm);
+        redBar.setAttribute('x2', xm);
+        xsPt.forEach((x, i) => pts[i].setAttribute('cy', p.Y(y(x))));
+
+        const show = $('lArrows').checked;
+        restMarks.setAttribute('visibility', show ? 'visible' : 'hidden');
+        // 短すぎる矢印は矢じりだけが残って見にくいので描かない
+        const setArrow = (el, x1, y1, x2, y2) => {
+          const visible = show && Math.hypot(x2 - x1, y2 - y1) > 8;
+          el.setAttribute('visibility', visible ? 'visible' : 'hidden');
+          if (visible) { el.setAttribute('x1', x1); el.setAttribute('y1', y1); el.setAttribute('x2', x2); el.setAttribute('y2', y2); }
+        };
+        xsArrow.forEach((x, i) => {
+          const dy = y(x);
+          setArrow(longArrows[i], p.X(x), p.Y(yLongArrow), p.X(x + dy), p.Y(yLongArrow));
+          setArrow(transArrows[i], p.X(x), p.Y(0), p.X(x), p.Y(dy));
+        });
+      },
+    };
+  })();
+
+  // ---------- 進行波と定在波 ----------
+  const standingTab = (() => {
+    const p = createPlot('svgStanding', { xmin: 0, xmax: 6 * Math.PI, ymin: -2.2, ymax: 2.2, rightPad: 50 });
+    const cA = p.path({ stroke: 'deepskyblue', 'stroke-width': 3 });
+    const cB = p.path({ stroke: 'hotpink', 'stroke-width': 3 });
+    const cS = p.path({ stroke: 'green', 'stroke-width': 4 });
+    const marks = p.add('g');
+    const xs = range(0, 6 * Math.PI, 6 * Math.PI / 1080);
+    const yNames = { '-2': '-2A', '-1': '-A', '0': 'O', '1': 'A', '2': '2A' };
+    let lastA1 = null;
+    return {
+      period: () => 2,                             // 1 周期 = 16 フレーム（Streamlit 版と同じ動き）
+      draw(ph) {
+        const a1 = num('sA1'), a2 = num('sA2'), l1 = num('sL1'), l2 = num('sL2'), v1 = num('sV1'), v2 = num('sV2');
+        $('sA1V').textContent = formatSig(a1);  $('sA2V').textContent = formatSig(a2);
+        $('sL1V').textContent = formatSig(l1);  $('sL2V').textContent = formatSig(l2);
+        $('sV1V').textContent = String(v1);     $('sV2V').textContent = String(v2);
+        if (a1 !== lastA1) {                       // y の目盛りは振幅 A に合わせる
+          lastA1 = a1;
+          drawAxes(p, {
+            xGrid: Math.PI / 4, yGrid: a1, yAxisAt: 0, xTicks: range(0, 6 * Math.PI, Math.PI / 4),
+            yTicks: range(-2 * a1, 2 * a1, a1), yLabel: v => yNames[String(Math.round(v / a1))],
+            xName: 'x', yName: 'y',
+          });
+        }
+        const f = 16 * ph;
+        const yA = x => a1 * Math.sin(x / l1 - Math.PI * v1 * f);
+        const yB = x => a2 * Math.sin(-x / l2 - Math.PI * v2 * f);
+        cA.setAttribute('d', $('chkA').checked ? p.d(xs, yA) : '');
+        cB.setAttribute('d', $('chkB').checked ? p.d(xs, yB) : '');
+        cS.setAttribute('d', $('chkS').checked ? p.d(xs, x => yA(x) + yB(x)) : '');
+        let m = '';
+        if ($('chkN').checked) {
+          for (let x = 0; x <= 6 * Math.PI + 1e-9; x += Math.PI * l1)
+            m += `<circle cx="${p.X(x)}" cy="${p.Y(0)}" r="7" fill="red"/>`;
+          for (let x = Math.PI * l1 / 2; x <= 6 * Math.PI + 1e-9; x += Math.PI * l1)
+            m += `<circle cx="${p.X(x)}" cy="${p.Y(0)}" r="7" fill="blue"/>`;
+        }
+        marks.innerHTML = m;
+      },
+    };
+  })();
+
+  // ---------- パルス波の反射（矩形波・三角波・正弦波） ----------
+  const reflectTab = (() => {
+    const p = createPlot('svgReflect', { xmin: -8, xmax: 5, ymin: -1.4, ymax: 2.4, rightPad: 50 });
+    const beyond = `<rect x="${p.X(0)}" y="${p.Y(p.ymax)}" width="${p.X(p.xmax) - p.X(0)}" height="${p.Y(p.ymin) - p.Y(p.ymax)}" fill="#eee"/>`;
+    drawAxes(p, { under: beyond, gridXmin: p.xmin, xGrid: 0.5, yGrid: 0.5, xTicks: range(-8, 5, 1), xName: 'x' });
+    const wall = p.add('line', { x1: p.X(0), x2: p.X(0), y1: p.Y(p.ymin), y2: p.Y(p.ymax), stroke: '#555' });
+    const wallLabel = p.add('text', { x: p.X(0), y: p.T - 12, 'text-anchor': 'middle', 'font-size': '16pt', fill: '#555' }, p.fg);
+    const dash = { 'stroke-width': 2.5, 'stroke-dasharray': '8 6' };
+    const inc = p.path({ stroke: 'red', ...dash });
+    const incInv = p.path({ stroke: '#f39', ...dash });
+    const ref = p.path({ stroke: 'blue', ...dash });
+    const obs = p.path({ stroke: 'green', 'stroke-width': 5 });
+    const xsL = range(-8, 0, 0.01), xsAll = range(-8, 5, 0.01), xsR = range(0, 5, 0.01);
+    const shapes = {
+      square: w => 1,
+      triangle: w => w < 0.25 ? w / 0.25 : (1 - w) / 0.75,
+      sine: w => Math.sin(Math.PI * w),
+    };
+    const v = 2.0, x0 = -6, width = 2;            // パルスは x = -6〜-4 から速さ 1.5 で右へ。端は x = 0
+    const T = 2 / v;                               // 「進む」1 回（T/8）で 0.5 マス進むように周期を決める
+    return {
+      period: () => T,
+      maxPhase: () => 14 / (v * T),               // 反射波が左端を出たら止める
+      draw(ph) {
+        const s = v * T * ph;
+        const shape = shapes[radioVal('rShape')];
+        const fixed = radioVal('rEdge') === 'fixed';
+        const aux = radioVal('rAux') === 'on';
+        const f = u => { const w = (u - x0) / width; return (w >= 0 && w <= 1) ? shape(w) : 0; };
+        const yi = x => f(x - s);                       // 入射波（端がないとしたときの位置）
+        const yr = x => (fixed ? -1 : 1) * f(-x - s);   // 反射波（端で折り返す。固定端は上下反転）
+        obs.setAttribute('d', p.d(xsL, x => yi(x) + yr(x)));
+        inc.setAttribute('d', aux ? p.d(xsAll, yi) : '');
+        incInv.setAttribute('d', aux && fixed ? p.d(xsR, x => -yi(x)) : '');
+        ref.setAttribute('d', aux ? p.d(xsL, yr) : '');
+        wall.setAttribute('stroke-width', fixed ? 8 : 2);
+        wall.setAttribute('stroke-dasharray', fixed ? 'none' : '6 4');
+        wallLabel.textContent = fixed ? '固定端' : '自由端';
+        $('rLegendInc').hidden = !aux;
+        $('rLegendRef').hidden = !aux;
+        $('rLegendInv').hidden = !(aux && fixed);
+      },
+    };
+  })();
+
+  const extraTabs = {
+    'tab-params': paramsTab,
+    'tab-long': longTab,
+    'tab-standing': standingTab,
+    'tab-reflect': reflectTab,
+  };
+
+  // ---------- 描画 ----------
   function draw(ms) {
     const A = Number(ampInput.value);
     const lambda = Number(lambdaInput.value);
     const T = Number(periodInput.value);
-    ampValue.textContent = formatSig(A);
-    lambdaValue.textContent = formatSig(lambda);
-    periodValue.textContent = formatSig(T);
-    speedValue.textContent = (lambda / T).toFixed(2);
+    $('ampValue').textContent = formatSig(A);
+    $('lambdaValue').textContent = formatSig(lambda);
+    $('periodValue').textContent = formatSig(T);
+    $('speedValue').textContent = (lambda / T).toFixed(2);
 
-    if (isRunning) phase += (ms - prevMs) / 1000 / T;
+    const ex = extraTabs[activeTab];
+    const clockT = ex ? ex.period() : T;   // このタブの1周期 [s]（next/back は T/8 ずつ）
+    if (isRunning) phase += (ms - prevMs) / 1000 / clockT;
     prevMs = ms;
-    const pts1 = [];
-    const front = lambda * phase * pxPerM;
-    const waveY = x => x > front ? 0 : A * pxPerM * Math.sin(2 * Math.PI * (x / pxPerM / lambda - phase));
-    for (let x = 0; x <= 600; x++) {
-      pts1.push(`${originX + x},${originY - waveY(x)}`);
+    if (ex?.maxPhase && phase > ex.maxPhase()) { phase = ex.maxPhase(); isRunning = false; }
+    $('timeValue').textContent = (phase * clockT).toFixed(2);
+    $('startstop').textContent = isRunning ? '❚❚ 停止' : '▶ 再生';
+    if (ex) {
+      ex.draw(phase);
+      requestAnimationFrame(draw);
+      return;
     }
-    moving1.setAttribute('points', pts1.join(' '));
+    const t = phase * T;
 
-    for (const { x, circle } of dots) {
-      circle.setAttribute('cy', originY - waveY(x));
-    }
+    // 波が来ている範囲: 連続波は先端より左すべて、パルス波は先端から半波長だけ
+    const pulse = radioVal('waveType') === 'pulse';
+    const inWave = (x, tt) => {
+      const front = lambda * tt / T;               // 波の先端の位置
+      return x <= front && (!pulse || x >= front - lambda / 2);
+    };
+    // 位置 x [m]、時刻 tt [s] での変位 y [m]（x=0 から +x 向きに進む波）
+    const waveY = (x, tt) => inWave(x, tt) ? A * Math.sin(2 * Math.PI * (x / lambda - tt / T)) : 0;
+    // 媒質の速度を ω で割ったもの（矢印の長さ用）
+    const waveV = (x, tt) => inWave(x, tt) ? -A * Math.cos(2 * Math.PI * (x / lambda - tt / T)) : 0;
+
+    if (activeTab === 'tab-yx') drawYX(waveY, t);
+    else drawYT(waveY, waveV, t, T);
 
     requestAnimationFrame(draw);
   }
+
+  function drawYX(waveY, t) {
+    const pts = [];
+    for (let px = 0; px <= 600; px++) {
+      pts.push(`${originX + px},${originY - waveY(px / pxPerM, t) * pxPerM}`);
+    }
+    $('moving1').setAttribute('points', pts.join(' '));
+    for (const { x, circle } of dots) {
+      circle.setAttribute('cy', originY - waveY(x, t) * pxPerM);
+    }
+  }
+
+  function drawYT(waveY, waveV, t, T) {
+    // 左: 波形
+    const pts = [];
+    for (let px = 0; px <= xMax2 * pxPerM; px++) {
+      pts.push(`${originX + px},${originY - waveY(px / pxPerM, t) * pxPerM}`);
+    }
+    $('moving2').setAttribute('points', pts.join(' '));
+
+    const selPx = originX + selectedX * pxPerM;
+
+    // 赤点の速度の向き（矢印）
+    const len = waveV(selectedX, t) * 60;   // 上向きが正
+    const a = $('selArrow');
+    const visible = $('showArrows').checked && Math.abs(len) > 4;
+    a.setAttribute('visibility', visible ? 'visible' : 'hidden');
+    if (visible) {
+      const cy = originY - waveY(selectedX, t) * pxPerM;
+      const dir = Math.sign(len);
+      a.setAttribute('x1', selPx); a.setAttribute('x2', selPx);
+      a.setAttribute('y1', cy - dir * 12);
+      a.setAttribute('y2', cy - len - dir * 12);
+    }
+    $('selMarker').setAttribute('x1', selPx);
+    $('selMarker').setAttribute('x2', selPx);
+
+    // 右: y-t グラフ（表示幅を超えたら左へスクロール）
+    const tStart = Math.max(0, t - tWindow);
+    const tToPx = tt => ytOriginX + (tt - tStart) * pxPerS;
+
+    let grid = '', ticks = '';
+    for (let s = Math.ceil(tStart - 1e-9); s <= tStart + tWindow + 1e-9; s++) {
+      const px = tToPx(s);
+      grid += `<line x1="${px}" y1="${originY - 1.5 * pxPerM}" x2="${px}" y2="${originY + 1.5 * pxPerM}" stroke="lightgray"/>`;
+      ticks += `<line x1="${px}" y1="${originY - 5}" x2="${px}" y2="${originY + 5}" stroke="black"/>`;
+      if (s !== 0) ticks += `<text x="${px}" y="${originY + 38}" text-anchor="middle">${formatSig(s)}</text>`;
+    }
+    $('ytGridV').innerHTML = grid;
+    $('ytTTicks').innerHTML = ticks;
+
+    const trace = [];
+    const n = Math.floor((t - tStart) * pxPerS);
+    for (let i = 0; i <= n; i++) {
+      const tt = tStart + i / pxPerS;
+      trace.push(`${tToPx(tt)},${originY - waveY(selectedX, tt) * pxPerM}`);
+    }
+    const yNow = originY - waveY(selectedX, t) * pxPerM;
+    trace.push(`${tToPx(t)},${yNow}`);
+    $('ytTrace').setAttribute('points', trace.join(' '));
+
+    $('selDot').setAttribute('cx', selPx);
+    $('selDot').setAttribute('cy', yNow);
+    $('ytNow').setAttribute('cx', tToPx(t));
+    $('ytNow').setAttribute('cy', yNow);
+
+    const c = $('connector');
+    c.setAttribute('x1', selPx); c.setAttribute('y1', yNow);
+    c.setAttribute('x2', tToPx(t)); c.setAttribute('y2', yNow);
+  }
+
+  for (const p of plots) p.raise();   // 各グラフの目盛りを、後から追加した線や点より前面に
+  selectTab(tabButtons[0]);   // タブの並び順を変えても、先頭のタブで起動する
   requestAnimationFrame(draw);
 </script>
